@@ -1,0 +1,37 @@
+# Editor and IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Azure deployment outputs
+*.outputs.json
+
+# Bicep compiled ARM templates (generated)
+*.json
+!workflow.json
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+
+# Environment files
+.env
+.env.local
+*.env
+
+# Logs
+logs/
+*.log

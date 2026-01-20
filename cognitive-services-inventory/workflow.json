@@ -1,0 +1,145 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "contentVersion": "1.0.0.0",
+        "triggers": {
+            "When_a_HTTP_request_is_received": {
+                "type": "Request",
+                "kind": "Http"
+            }
+        },
+        "actions": {
+            "Query_Azure_Resource_Graph": {
+                "type": "Http",
+                "runAfter": {},
+                "inputs": {
+                    "uri": "https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2022-10-01",
+                    "method": "POST",
+                    "headers": {
+                        "Content-Type": "application/json"
+                    },
+                    "body": {
+                        "query": "Resources | where type =~ 'microsoft.cognitiveservices/accounts' | project ResourceId = id, ResourceName = name, ResourceType = type, Kind = kind, Location = location, SubscriptionId = subscriptionId, ResourceGroup = resourceGroup, Sku = sku.name, ProvisioningState = properties.provisioningState, PublicNetworkAccess = properties.publicNetworkAccess, Endpoint = properties.endpoint | join kind=leftouter (ResourceContainers | where type =~ 'microsoft.resources/subscriptions' | project SubscriptionId = subscriptionId, SubscriptionName = name) on SubscriptionId | project ResourceId, ResourceName, ResourceType, Kind, Location, SubscriptionId, SubscriptionName, ResourceGroup, Sku, ProvisioningState, PublicNetworkAccess, Endpoint"
+                    },
+                    "authentication": {
+                        "type": "ManagedServiceIdentity",
+                        "audience": "https://management.azure.com/"
+                    }
+                }
+            },
+            "Initialize_record_count": {
+                "type": "InitializeVariable",
+                "runAfter": {
+                    "Query_Azure_Resource_Graph": [
+                        "Succeeded"
+                    ]
+                },
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "recordCount",
+                            "type": "integer",
+                            "value": "@length(body('Query_Azure_Resource_Graph')?['data'])"
+                        }
+                    ]
+                }
+            },
+            "Check_if_results_exist": {
+                "type": "If",
+                "runAfter": {
+                    "Initialize_record_count": [
+                        "Succeeded"
+                    ]
+                },
+                "expression": {
+                    "and": [
+                        {
+                            "greater": [
+                                "@variables('recordCount')",
+                                0
+                            ]
+                        }
+                    ]
+                },
+                "actions": {
+                    "Transform_results_for_DCR": {
+                        "type": "Select",
+                        "runAfter": {},
+                        "inputs": {
+                            "from": "@body('Query_Azure_Resource_Graph')?['data']",
+                            "select": {
+                                "TimeGenerated": "@utcNow()",
+                                "ResourceId": "@if(equals(item()?['ResourceId'], null), '', item()['ResourceId'])",
+                                "ResourceName": "@if(equals(item()?['ResourceName'], null), '', item()['ResourceName'])",
+                                "ResourceType": "@if(equals(item()?['ResourceType'], null), '', item()['ResourceType'])",
+                                "Kind": "@if(equals(item()?['Kind'], null), '', item()['Kind'])",
+                                "Location": "@if(equals(item()?['Location'], null), '', item()['Location'])",
+                                "SubscriptionId": "@if(equals(item()?['SubscriptionId'], null), '', item()['SubscriptionId'])",
+                                "SubscriptionName": "@if(equals(item()?['SubscriptionName'], null), 'Unknown', item()['SubscriptionName'])",
+                                "ResourceGroup": "@if(equals(item()?['ResourceGroup'], null), '', item()['ResourceGroup'])",
+                                "Sku": "@if(equals(item()?['Sku'], null), 'Unknown', item()['Sku'])",
+                                "ProvisioningState": "@if(equals(item()?['ProvisioningState'], null), 'Unknown', item()['ProvisioningState'])",
+                                "PublicNetworkAccess": "@if(equals(item()?['PublicNetworkAccess'], null), 'Unknown', item()['PublicNetworkAccess'])",
+                                "Endpoint": "@if(equals(item()?['Endpoint'], null), '', item()['Endpoint'])"
+                            }
+                        }
+                    },
+                    "Send_to_Data_Collection_Rule": {
+                        "type": "Http",
+                        "runAfter": {
+                            "Transform_results_for_DCR": [
+                                "Succeeded"
+                            ]
+                        },
+                        "inputs": {
+                            "uri": "@{appsetting('DCE_LOGS_INGESTION_ENDPOINT')}/dataCollectionRules/@{appsetting('DCR_IMMUTABLE_ID')}/streams/@{appsetting('DCR_STREAM_NAME')}?api-version=2023-01-01",
+                            "method": "POST",
+                            "headers": {
+                                "Content-Type": "application/json"
+                            },
+                            "body": "@body('Transform_results_for_DCR')",
+                            "authentication": {
+                                "type": "ManagedServiceIdentity",
+                                "audience": "https://monitor.azure.com/"
+                            }
+                        }
+                    },
+                    "Success_Response": {
+                        "type": "Response",
+                        "runAfter": {
+                            "Send_to_Data_Collection_Rule": [
+                                "Succeeded"
+                            ]
+                        },
+                        "inputs": {
+                            "statusCode": 200,
+                            "body": {
+                                "status": "Success",
+                                "message": "Successfully sent @{variables('recordCount')} Cognitive Services resources to Log Analytics",
+                                "resourceCount": "@variables('recordCount')"
+                            }
+                        }
+                    }
+                },
+                "else": {
+                    "actions": {
+                        "No_Results_Response": {
+                            "type": "Response",
+                            "runAfter": {},
+                            "inputs": {
+                                "statusCode": 200,
+                                "body": {
+                                    "status": "Success",
+                                    "message": "No Cognitive Services resources found in the specified scope",
+                                    "resourceCount": 0
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "outputs": {}
+    },
+    "kind": "Stateful"
+}

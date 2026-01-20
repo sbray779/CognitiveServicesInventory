@@ -1,0 +1,11 @@
+.git
+.gitignore
+.vscode
+modules
+*.bicep
+*.bicepparam
+*.ps1
+*.md
+webapp-logs
+webapp-logs.zip
+workflows
