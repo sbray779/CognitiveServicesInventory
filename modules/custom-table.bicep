@@ -41,29 +41,59 @@ resource customTable 'Microsoft.OperationalInsights/workspaces/tables@2022-10-01
           description: 'The time the record was generated'
         }
         {
-          name: 'ResourceId'
+          name: 'DeploymentId'
           type: 'string'
-          description: 'Azure Resource ID of the Cognitive Service'
+          description: 'Full Azure Resource ID of the deployment'
         }
         {
-          name: 'ResourceName'
+          name: 'DeploymentName'
           type: 'string'
-          description: 'Name of the Cognitive Service resource'
+          description: 'Name of the deployment'
         }
         {
-          name: 'ResourceType'
+          name: 'ModelName'
           type: 'string'
-          description: 'Type of the Cognitive Service resource'
+          description: 'The model deployed (e.g., gpt-4, text-embedding-ada-002)'
         }
         {
-          name: 'Kind'
+          name: 'ModelVersion'
           type: 'string'
-          description: 'Kind/SKU tier of the Cognitive Service'
+          description: 'Version of the deployed model'
         }
         {
-          name: 'Location'
+          name: 'ModelFormat'
           type: 'string'
-          description: 'Azure region where the resource is deployed'
+          description: 'Format/type of the model (e.g., OpenAI)'
+        }
+        {
+          name: 'SkuName'
+          type: 'string'
+          description: 'SKU name (e.g., Standard, GlobalStandard)'
+        }
+        {
+          name: 'SkuCapacity'
+          type: 'int'
+          description: 'Provisioned capacity/TPM'
+        }
+        {
+          name: 'AccountName'
+          type: 'string'
+          description: 'Parent Cognitive Services account name'
+        }
+        {
+          name: 'AccountId'
+          type: 'string'
+          description: 'Full Azure Resource ID of the parent account'
+        }
+        {
+          name: 'AccountKind'
+          type: 'string'
+          description: 'Kind of the parent account (e.g., OpenAI, CognitiveServices)'
+        }
+        {
+          name: 'AccountEndpoint'
+          type: 'string'
+          description: 'Endpoint URL of the parent Cognitive Services account'
         }
         {
           name: 'SubscriptionId'
@@ -81,24 +111,9 @@ resource customTable 'Microsoft.OperationalInsights/workspaces/tables@2022-10-01
           description: 'Resource group containing the resource'
         }
         {
-          name: 'Sku'
+          name: 'Location'
           type: 'string'
-          description: 'SKU name of the Cognitive Service'
-        }
-        {
-          name: 'ProvisioningState'
-          type: 'string'
-          description: 'Provisioning state of the resource'
-        }
-        {
-          name: 'PublicNetworkAccess'
-          type: 'string'
-          description: 'Public network access setting'
-        }
-        {
-          name: 'Endpoint'
-          type: 'string'
-          description: 'The endpoint URL of the Cognitive Service'
+          description: 'Azure region where the resource is deployed'
         }
       ]
     }

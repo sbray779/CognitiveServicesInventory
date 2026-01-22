@@ -17,7 +17,7 @@ param dataCollectionEndpointResourceId string
 param customTableName string
 
 @description('Optional. Description of the Data Collection Rule.')
-param ruleDescription string = 'DCR for ingesting Cognitive Services inventory to custom Log Analytics table'
+param ruleDescription string = 'DCR for ingesting Cognitive Services deployment inventory to custom Log Analytics table'
 
 // ============ //
 // Variables    //
@@ -46,23 +46,47 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
             type: 'datetime'
           }
           {
-            name: 'ResourceId'
+            name: 'DeploymentId'
             type: 'string'
           }
           {
-            name: 'ResourceName'
+            name: 'DeploymentName'
             type: 'string'
           }
           {
-            name: 'ResourceType'
+            name: 'ModelName'
             type: 'string'
           }
           {
-            name: 'Kind'
+            name: 'ModelVersion'
             type: 'string'
           }
           {
-            name: 'Location'
+            name: 'ModelFormat'
+            type: 'string'
+          }
+          {
+            name: 'SkuName'
+            type: 'string'
+          }
+          {
+            name: 'SkuCapacity'
+            type: 'int'
+          }
+          {
+            name: 'AccountName'
+            type: 'string'
+          }
+          {
+            name: 'AccountId'
+            type: 'string'
+          }
+          {
+            name: 'AccountKind'
+            type: 'string'
+          }
+          {
+            name: 'AccountEndpoint'
             type: 'string'
           }
           {
@@ -78,19 +102,7 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
             type: 'string'
           }
           {
-            name: 'Sku'
-            type: 'string'
-          }
-          {
-            name: 'ProvisioningState'
-            type: 'string'
-          }
-          {
-            name: 'PublicNetworkAccess'
-            type: 'string'
-          }
-          {
-            name: 'Endpoint'
+            name: 'Location'
             type: 'string'
           }
         ]
@@ -112,7 +124,7 @@ resource dataCollectionRule 'Microsoft.Insights/dataCollectionRules@2023-03-11' 
         destinations: [
           'logAnalyticsWorkspace'
         ]
-        transformKql: 'source | project TimeGenerated, ResourceId, ResourceName, ResourceType, Kind, Location, SubscriptionId, SubscriptionName, ResourceGroup, Sku, ProvisioningState, PublicNetworkAccess, Endpoint'
+        transformKql: 'source | project TimeGenerated, DeploymentId, DeploymentName, ModelName, ModelVersion, ModelFormat, SkuName, SkuCapacity, AccountName, AccountId, AccountKind, AccountEndpoint, SubscriptionId, SubscriptionName, ResourceGroup, Location'
         outputStream: streamName
       }
     ]

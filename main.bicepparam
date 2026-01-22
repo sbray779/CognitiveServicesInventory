@@ -1,9 +1,9 @@
 using 'main.bicep'
 
 // Required parameters
-param logAnalyticsWorkspaceName = '<your-log-analytics-workspace-name>'
-param logAnalyticsWorkspaceResourceGroupName = '<your-log-analytics-workspace-resource-group-name>'
-param resourceGroupName = '<your-resource-group-name>'
+param logAnalyticsWorkspaceName = 'ChargeBackWorkspace'
+param logAnalyticsWorkspaceResourceGroupName = 'AIHubChargeBack'
+param resourceGroupName = 'TestChargeBack'
 param location = 'eastus2'
 
 // Optional parameters

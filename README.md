@@ -1,6 +1,6 @@
-# Cognitive Services Inventory - Azure Infrastructure
+# Cognitive Services Deployment Inventory - Azure Infrastructure
 
-This repository contains Azure Bicep templates for deploying infrastructure to inventory all Azure Cognitive Services resources across subscriptions and log them to a custom Log Analytics table.
+This repository contains Azure Bicep templates for deploying infrastructure to inventory all Azure Cognitive Services **deployments** (model deployments within accounts) across subscriptions and log them to a custom Log Analytics table.
 
 ## Architecture Overview
 
@@ -14,20 +14,25 @@ This repository contains Azure Bicep templates for deploying infrastructure to i
 │                      Standard Logic App (Workflow)                        │
 │  ┌────────────────────────────────────────────────────────────────────┐  │
 │  │ 1. Receive HTTP request (trigger only, no parameters required)     │  │
-│  │ 2. Query Azure Resource Graph for all Cognitive Services           │  │
+│  │ 2. Query Azure Resource Graph for all Cognitive Services ACCOUNTS  │  │
 │  │    (scope determined by managed identity's Reader permissions)     │  │
-│  │ 3. Transform results for custom table schema                       │  │
-│  │ 4. Send data to Data Collection Rule endpoint                      │  │
+│  │ 3. For each account (20 in parallel):                              │  │
+│  │    a. Call ARM API to get DEPLOYMENTS                              │  │
+│  │    b. Transform deployments with account metadata                  │  │
+│  │    c. Send to DCR immediately (per-account batching)               │  │
+│  │ 4. Return summary response                                         │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 │                          (System Managed Identity)                        │
 └─────────────────────────────────┬────────────────────────────────────────┘
+                                  │
+                            (multiple parallel sends)
                                   │
                                   ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
 │              Data Collection Endpoint (DCE) & Rule (DCR)                  │
 │  ┌────────────────────────────────────────────────────────────────────┐  │
 │  │ • Logs Ingestion API endpoint                                      │  │
-│  │ • Custom table schema definition                                   │  │
+│  │ • Deployment-focused custom table schema                           │  │
 │  │ • Transform KQL (passthrough)                                      │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────┬────────────────────────────────────────┘
@@ -37,25 +42,63 @@ This repository contains Azure Bicep templates for deploying infrastructure to i
 │                      Log Analytics Workspace                              │
 │  ┌────────────────────────────────────────────────────────────────────┐  │
 │  │ CognitiveServicesInventory_CL (Custom Table)                       │  │
-│  │ • TimeGenerated, ResourceId, ResourceName, ResourceType            │  │
-│  │ • Kind, Location, SubscriptionId, SubscriptionName                 │  │
-│  │ • ResourceGroup, Sku, ProvisioningState, PublicNetworkAccess       │  │
-│  │ • Endpoint                                                         │  │
+│  │ Deployment Fields:                                                 │  │
+│  │ • DeploymentId, DeploymentName, ModelName, ModelVersion            │  │
+│  │ • ModelFormat, SkuName, SkuCapacity                                │  │
+│  │ Account Fields:                                                    │  │
+│  │ • AccountName, AccountId, AccountKind, AccountEndpoint             │  │
+│  │ Metadata:                                                          │  │
+│  │ • SubscriptionId, SubscriptionName, ResourceGroup, Location        │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
+
+## How It Works
+
+The workflow uses a **two-step query approach** because Cognitive Services deployments are not indexed in Azure Resource Graph:
+
+1. **Step 1 - Query Accounts**: Use Azure Resource Graph to find all Cognitive Services accounts
+2. **Step 2 - Query Deployments**: For each account, call the ARM API to retrieve deployments
+
+This approach ensures complete visibility into all model deployments across your Azure environment.
+
+## Scalability Features
+
+The workflow is designed for large-scale environments with many Cognitive Services accounts:
+
+| Feature | Description |
+|---------|-------------|
+| **Parallel Processing** | Processes up to 20 accounts concurrently |
+| **Per-Account DCR Sends** | Sends deployments to Log Analytics per account (avoids 1MB payload limit) |
+| **Select Transform** | Uses efficient Select action instead of nested loops |
+| **Exponential Retry** | Automatically retries on ARM API throttling (429 errors) |
+| **Chunked Transfer** | Uses chunked transfer mode for large responses |
+
+### Performance Characteristics
+
+| Accounts | Sequential (old) | Parallel (current) |
+|----------|------------------|-------------------|
+| 10 | ~30 seconds | ~5 seconds |
+| 100 | ~5 minutes | ~30 seconds |
+| 500 | ~25 minutes | ~2-3 minutes |
+
+### Limitations
+
+- **Resource Graph**: Returns max 1000 accounts per query (pagination not yet implemented)
+- **HTTP Trigger Timeout**: 30 minutes max execution time
+- **ARM API Rate Limits**: ~12,000 requests/hour per subscription (retry policy handles throttling)
 
 ## Components
 
 | Component | Description |
 |-----------|-------------|
 | **Data Collection Endpoint (DCE)** | Provides the ingestion endpoint for the Logs Ingestion API |
-| **Data Collection Rule (DCR)** | Defines the custom table schema and routing to Log Analytics |
-| **Custom Table** | `CognitiveServicesInventory_CL` table in Log Analytics |
+| **Data Collection Rule (DCR)** | Defines the deployment-focused table schema and routing to Log Analytics |
+| **Custom Table** | `CognitiveServicesInventory_CL` table with deployment and account fields |
 | **Storage Account** | Required backing storage for Standard Logic App |
 | **App Service Plan** | Workflow Standard SKU for Logic App hosting |
 | **Standard Logic App** | Hosts the workflow with managed identity |
-| **Logic App Workflow** | HTTP-triggered workflow that queries Resource Graph |
+| **Logic App Workflow** | HTTP-triggered workflow that queries accounts via Resource Graph, then queries deployments via ARM API |
 | **RBAC Assignments** | Monitoring Metrics Publisher + Reader roles |
 
 ## Prerequisites
@@ -205,10 +248,78 @@ Invoke-RestMethod -Uri $callbackUrl -Method POST -ContentType "application/json"
 ### Query the Custom Table
 
 ```kusto
+// Summary of deployments by model
 CognitiveServicesInventory_CL
 | where TimeGenerated > ago(1h)
-| summarize count() by Kind, Location
-| order by count_ desc
+| summarize DeploymentCount=count(), TotalCapacity=sum(SkuCapacity) by ModelName, SkuName
+| order by DeploymentCount desc
+
+// All deployments with account details
+CognitiveServicesInventory_CL
+| where TimeGenerated > ago(1h)
+| project DeploymentName, ModelName, ModelVersion, SkuName, SkuCapacity, AccountName, SubscriptionName, Location
+| order by AccountName, DeploymentName
+
+// Capacity by subscription
+CognitiveServicesInventory_CL
+| where TimeGenerated > ago(1h)
+| summarize TotalCapacity=sum(SkuCapacity), DeploymentCount=count() by SubscriptionName, ModelName
+| order by TotalCapacity desc
+```
+
+### Join with API Management Logs
+
+Use the custom table to enrich API Management LLM logs with deployment details:
+
+```kusto
+ApiManagementGatewayLogs 
+| where TimeGenerated >= ago(60d) 
+| join kind=inner ApiManagementGatewayLlmLog on CorrelationId 
+| where SequenceNumber == 0 and IsRequestSuccess 
+| extend ParsedUrl = parse_url(BackendUrl)
+| extend ExtractedEndpoint = strcat(ParsedUrl.Scheme, "://", ParsedUrl.Host, "/")
+| extend DeploymentFromUrl = extract("/openai/deployments/([^/]+)/", 1, BackendUrl)
+| join kind=leftouter (
+    CognitiveServicesInventory_CL 
+    | summarize arg_max(TimeGenerated, *) by AccountEndpoint, DeploymentName
+    | project 
+        AccountEndpoint, 
+        CogSvcDeploymentName = DeploymentName,
+        CogSvcModelName = ModelName,
+        CogSvcSkuName = SkuName,
+        CogSvcSkuCapacity = SkuCapacity,
+        CogSvcAccountName = AccountName,
+        CogSvcSubscriptionId = SubscriptionId
+) on $left.ExtractedEndpoint == $right.AccountEndpoint, $left.DeploymentFromUrl == $right.CogSvcDeploymentName
+| summarize 
+    TotalTokens = sum(TotalTokens), 
+    CompletionTokens = sum(CompletionTokens), 
+    PromptTokens = sum(PromptTokens), 
+    FirstSeen = min(TimeGenerated), 
+    LastSeen = max(TimeGenerated), 
+    Regions = make_set(Region, 8), 
+    CallerIpAddresses = make_set(CallerIpAddress, 8), 
+    Calls = count() 
+    by ProductId, DeploymentFromUrl, ExtractedEndpoint, BackendId, CogSvcModelName, CogSvcSkuName, CogSvcSkuCapacity, CogSvcAccountName, CogSvcSubscriptionId
+| project 
+    ProductId, 
+    DeploymentName = DeploymentFromUrl,
+    ModelName = CogSvcModelName,
+    AccountName = CogSvcAccountName,
+    SubscriptionId = CogSvcSubscriptionId,
+    SkuName = CogSvcSkuName,
+    SkuCapacity = CogSvcSkuCapacity,
+    BackendId,
+    Endpoint = ExtractedEndpoint,
+    PromptTokens, 
+    CompletionTokens, 
+    TotalTokens, 
+    Calls, 
+    FirstSeen, 
+    LastSeen, 
+    Regions, 
+    CallerIpAddresses
+| order by ProductId asc, TotalTokens desc
 ```
 
 ## RBAC Assignments
@@ -222,15 +333,18 @@ The deployment creates the following role assignments for the Logic App managed 
 
 ### Understanding Query Scope
 
-The workflow's ability to discover Cognitive Services resources is **entirely determined by the managed identity's Reader permissions**:
+The workflow uses a **two-step query approach** that requires Reader permissions:
+
+1. **Resource Graph Query**: Finds all Cognitive Services accounts the managed identity can read
+2. **ARM API Calls**: For each account, retrieves deployments (also requires Reader on the account)
 
 | Reader Role Scope | Cognitive Services Discovered |
 |-------------------|-------------------------------|
-| Single Subscription | Only resources in that subscription |
-| Multiple Subscriptions | Resources in each subscription where Reader is assigned |
-| Management Group | All resources in subscriptions under that management group |
+| Single Subscription | Only accounts/deployments in that subscription |
+| Multiple Subscriptions | Accounts/deployments in each subscription where Reader is assigned |
+| Management Group | All accounts/deployments in subscriptions under that management group |
 
-**Important:** The Log Analytics workspace permissions do **not** affect what Cognitive Services can be queried. The workspace only needs to accept data from the DCR (handled by the Monitoring Metrics Publisher role on the DCR). The Reader role on subscriptions/management groups is what enables cross-subscription resource discovery via Azure Resource Graph.
+**Important:** The Log Analytics workspace permissions do **not** affect what Cognitive Services can be queried. The workspace only needs to accept data from the DCR (handled by the Monitoring Metrics Publisher role on the DCR). The Reader role on subscriptions/management groups is what enables cross-subscription resource discovery via Azure Resource Graph and ARM API.
 
 ### Expanding Query Scope
 
@@ -254,18 +368,21 @@ To query Cognitive Services across multiple subscriptions:
 | Column | Type | Description |
 |--------|------|-------------|
 | TimeGenerated | datetime | Timestamp when record was created |
-| ResourceId | string | Full Azure Resource ID |
-| ResourceName | string | Name of the Cognitive Service |
-| ResourceType | string | Resource type (microsoft.cognitiveservices/accounts) |
-| Kind | string | Kind of Cognitive Service (e.g., OpenAI, TextAnalytics) |
-| Location | string | Azure region |
+| DeploymentId | string | Full Azure Resource ID of the deployment |
+| DeploymentName | string | Name of the deployment |
+| ModelName | string | The model deployed (e.g., gpt-4, text-embedding-ada-002) |
+| ModelVersion | string | Version of the deployed model |
+| ModelFormat | string | Format/type of the model (e.g., OpenAI) |
+| SkuName | string | SKU name (e.g., Standard, GlobalStandard) |
+| SkuCapacity | int | Provisioned capacity/TPM |
+| AccountName | string | Parent Cognitive Services account name |
+| AccountId | string | Full Azure Resource ID of the parent account |
+| AccountKind | string | Kind of the parent account (e.g., OpenAI, CognitiveServices) |
+| AccountEndpoint | string | Endpoint URL of the parent Cognitive Services account |
 | SubscriptionId | string | Subscription GUID |
 | SubscriptionName | string | Subscription display name |
 | ResourceGroup | string | Resource group name |
-| Sku | string | SKU name |
-| ProvisioningState | string | Resource provisioning state |
-| PublicNetworkAccess | string | Public network access setting |
-| Endpoint | string | Cognitive Services endpoint URL |
+| Location | string | Azure region |
 
 ## File Structure
 
@@ -300,12 +417,19 @@ CustomLATable/
 1. Verify the Logic App application settings are configured correctly
 2. Check the Logic App managed identity has the `Monitoring Metrics Publisher` role on the DCR
 3. Review the Logic App workflow run history for errors
+4. Check the workflow health status in the Azure Portal (should be "Healthy")
 
-### Resource Graph not returning expected results
+### Resource Graph not returning expected accounts
 
 1. Verify the Logic App managed identity has `Reader` role at the appropriate scope
 2. For cross-subscription queries, ensure the management group RBAC is deployed
 3. Test the Resource Graph query directly in Azure Portal
+
+### Deployments not being retrieved
+
+1. Verify the Logic App managed identity has `Reader` role on the Cognitive Services accounts
+2. Check workflow run history for 403 (Forbidden) errors on ARM API calls
+3. Ensure accounts are not filtered out by network restrictions (Private Endpoint only)
 
 ### Custom table not created
 
