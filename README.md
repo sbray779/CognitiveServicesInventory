@@ -105,11 +105,22 @@ The workflow is designed for large-scale environments with many Cognitive Servic
 
 - Azure subscription with Owner or Contributor + User Access Administrator permissions
 - Existing Log Analytics workspace
-- Azure CLI with Bicep support
-- PowerShell 7+ (for deployment script)
+- **For Bicep**: Azure CLI with Bicep support, PowerShell 7+
+- **For Terraform**: Terraform >= 1.5.0, Azure CLI
 - (Optional) Management Group access for cross-subscription queries
 
-## Deployment
+## Deployment Options
+
+This repository supports two deployment methods:
+
+| Method | Description |
+|--------|-------------|
+| **Bicep** | Native Azure deployment using Bicep templates (default) |
+| **Terraform** | HashiCorp Terraform deployment in the `terraform/` folder |
+
+---
+
+## Bicep Deployment
 
 ### Option 1: Automated Deployment (Recommended)
 
@@ -222,6 +233,35 @@ az deployment mg create \
   --template-file main-management-group-rbac.bicep \
   --parameters main-management-group-rbac.bicepparam
 ```
+
+---
+
+## Terraform Deployment
+
+For Terraform deployment, see the detailed instructions in [terraform/README.md](terraform/README.md).
+
+### Quick Start
+
+```bash
+cd terraform
+
+# Initialize
+terraform init
+
+# Create variables file
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
+
+# Deploy infrastructure
+terraform apply
+
+# Deploy workflow and configure settings
+.\Deploy-Workflow.ps1
+```
+
+The `Deploy-Workflow.ps1` script automatically reads Terraform outputs, configures Logic App settings, and deploys the workflow.
+
+---
 
 ## Usage
 
@@ -390,15 +430,15 @@ To query Cognitive Services across multiple subscriptions:
 CustomLATable/
 ├── .funcignore                             # Files to exclude from workflow deployment
 ├── .gitignore                              # Git ignore file
-├── Deploy-CognitiveServicesInventory.ps1   # Automated deployment script
+├── Deploy-CognitiveServicesInventory.ps1   # Automated deployment script (Bicep)
 ├── host.json                               # Logic App host configuration
-├── main.bicep                              # Main deployment template (subscription scope)
-├── main.bicepparam                         # Parameters file for main deployment
-├── main-management-group-rbac.bicep        # Management group RBAC deployment
+├── main.bicep                              # Main Bicep deployment template
+├── main.bicepparam                         # Parameters file for Bicep deployment
+├── main-management-group-rbac.bicep        # Management group RBAC (Bicep)
 ├── main-management-group-rbac.bicepparam
 ├── cognitive-services-inventory/           # Workflow folder (deployed to Logic App)
 │   └── workflow.json                       # Logic App workflow definition
-├── modules/
+├── modules/                                # Bicep modules
 │   ├── app-service-plan.bicep              # App Service Plan for Logic App
 │   ├── custom-table.bicep                  # Custom Log Analytics table
 │   ├── data-collection-endpoint.bicep      # Data Collection Endpoint
@@ -407,6 +447,14 @@ CustomLATable/
 │   ├── rbac-assignments.bicep              # RBAC at resource/subscription level
 │   ├── rbac-management-group.bicep         # RBAC at management group level
 │   └── storage-account.bicep               # Storage Account for Logic App
+├── terraform/                              # Terraform deployment (alternative)
+│   ├── main.tf                             # Main Terraform configuration
+│   ├── variables.tf                        # Input variables
+│   ├── outputs.tf                          # Output values
+│   ├── terraform.tfvars.example            # Example variables file
+│   ├── Deploy-Workflow.ps1                 # Post-Terraform workflow deployment script
+│   ├── .gitignore                          # Terraform-specific ignores
+│   └── README.md                           # Terraform-specific documentation
 └── README.md                               # This file
 ```
 

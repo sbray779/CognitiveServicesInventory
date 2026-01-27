@@ -1,0 +1,33 @@
+# =============================================================================
+# Example terraform.tfvars file
+# Copy this file to terraform.tfvars and update the values
+# =============================================================================
+
+# Required: Existing Log Analytics workspace
+log_analytics_workspace_name                = "your-workspace-name"
+log_analytics_workspace_resource_group_name = "your-workspace-rg"
+
+# Required: Resource group for new resources
+resource_group_name = "rg-cognitive-services-inventory"
+
+# Required: Azure region
+location = "eastus"
+
+# Optional: Custom table name (without _CL suffix)
+# custom_table_name = "CognitiveServicesInventory"
+
+# Optional: Prefix for resource names
+# resource_prefix = "cogai"
+
+# Optional: Management group ID for cross-subscription queries
+# management_group_id = "your-management-group-id"
+
+# Optional: Data retention settings
+# retention_in_days       = 30
+# total_retention_in_days = 365
+
+# Optional: Additional tags
+# tags = {
+#   Environment = "Production"
+#   Project     = "AI Inventory"
+# }
