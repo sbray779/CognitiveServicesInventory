@@ -9,10 +9,10 @@ param workspaceName string
 @maxValue(730)
 param retentionInDays int = 30
 
-@description('Optional. Total retention time in days including archive. Default is 365 days.')
+@description('Optional. Total retention time in days including archive. Default is 30 days.')
 @minValue(4)
 @maxValue(2556)
-param totalRetentionInDays int = 365
+param totalRetentionInDays int = 30
 
 // ============ //
 // Variables    //

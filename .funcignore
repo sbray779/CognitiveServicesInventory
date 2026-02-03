@@ -9,3 +9,5 @@ modules
 webapp-logs
 webapp-logs.zip
 workflows
+
+workflow-designtime/

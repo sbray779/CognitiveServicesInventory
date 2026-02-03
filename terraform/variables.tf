@@ -64,7 +64,7 @@ variable "retention_in_days" {
 variable "total_retention_in_days" {
   description = "Total retention time in days including archive for the custom table"
   type        = number
-  default     = 365
+  default     = 30
 
   validation {
     condition     = var.total_retention_in_days >= 4 && var.total_retention_in_days <= 2556
