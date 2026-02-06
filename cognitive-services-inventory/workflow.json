@@ -39,40 +39,163 @@
                     ]
                 }
             },
-            "Query_Cognitive_Services_Accounts": {
-                "type": "Http",
+            "Initialize_all_accounts": {
+                "type": "InitializeVariable",
                 "runAfter": {
                     "Initialize_accounts_with_deployments": [
                         "Succeeded"
                     ]
                 },
                 "inputs": {
-                    "uri": "https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2022-10-01",
-                    "method": "POST",
-                    "headers": {
-                        "Content-Type": "application/json"
-                    },
-                    "body": {
-                        "query": "Resources | where type =~ 'microsoft.cognitiveservices/accounts' | join kind=leftouter (ResourceContainers | where type =~ 'microsoft.resources/subscriptions' | project subscriptionId, SubscriptionName = name) on subscriptionId | project AccountId = id, AccountName = name, AccountKind = kind, AccountEndpoint = properties.endpoint, SubscriptionId = subscriptionId, SubscriptionName, ResourceGroup = resourceGroup, Location = location",
-                        "options": {
-                            "$top": 1000
+                    "variables": [
+                        {
+                            "name": "allAccounts",
+                            "type": "array",
+                            "value": []
+                        }
+                    ]
+                }
+            },
+            "Initialize_skip_token": {
+                "type": "InitializeVariable",
+                "runAfter": {
+                    "Initialize_all_accounts": [
+                        "Succeeded"
+                    ]
+                },
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "skipToken",
+                            "type": "string",
+                            "value": ""
+                        }
+                    ]
+                }
+            },
+            "Initialize_has_more_pages": {
+                "type": "InitializeVariable",
+                "runAfter": {
+                    "Initialize_skip_token": [
+                        "Succeeded"
+                    ]
+                },
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "hasMorePages",
+                            "type": "boolean",
+                            "value": true
+                        }
+                    ]
+                }
+            },
+            "Paginate_Cognitive_Services_Accounts": {
+                "type": "Until",
+                "runAfter": {
+                    "Initialize_has_more_pages": [
+                        "Succeeded"
+                    ]
+                },
+                "expression": "@equals(variables('hasMorePages'), false)",
+                "limit": {
+                    "count": 100,
+                    "timeout": "PT1H"
+                },
+                "actions": {
+                    "Query_Cognitive_Services_Accounts_Page": {
+                        "type": "Http",
+                        "runAfter": {},
+                        "inputs": {
+                            "uri": "https://management.azure.com/providers/Microsoft.ResourceGraph/resources?api-version=2022-10-01",
+                            "method": "POST",
+                            "headers": {
+                                "Content-Type": "application/json"
+                            },
+                            "body": "@if(equals(variables('skipToken'), ''), json('{\"query\": \"Resources | where type =~ \\u0027microsoft.cognitiveservices/accounts\\u0027 | join kind=leftouter (ResourceContainers | where type =~ \\u0027microsoft.resources/subscriptions\\u0027 | project subscriptionId, SubscriptionName = name) on subscriptionId | project AccountId = id, AccountName = name, AccountKind = kind, AccountEndpoint = properties.endpoint, SubscriptionId = subscriptionId, SubscriptionName, ResourceGroup = resourceGroup, Location = location\", \"options\": {\"$top\": 1000}}'), json(concat('{\"query\": \"Resources | where type =~ \\u0027microsoft.cognitiveservices/accounts\\u0027 | join kind=leftouter (ResourceContainers | where type =~ \\u0027microsoft.resources/subscriptions\\u0027 | project subscriptionId, SubscriptionName = name) on subscriptionId | project AccountId = id, AccountName = name, AccountKind = kind, AccountEndpoint = properties.endpoint, SubscriptionId = subscriptionId, SubscriptionName, ResourceGroup = resourceGroup, Location = location\", \"options\": {\"$top\": 1000, \"$skipToken\": \"', variables('skipToken'), '\"}}')))",
+                            "authentication": {
+                                "type": "ManagedServiceIdentity",
+                                "audience": "https://management.azure.com/"
+                            }
+                        },
+                        "runtimeConfiguration": {
+                            "contentTransfer": {
+                                "transferMode": "Chunked"
+                            }
                         }
                     },
-                    "authentication": {
-                        "type": "ManagedServiceIdentity",
-                        "audience": "https://management.azure.com/"
-                    }
-                },
-                "runtimeConfiguration": {
-                    "contentTransfer": {
-                        "transferMode": "Chunked"
+                    "Merge_accounts_into_array": {
+                        "type": "Foreach",
+                        "runAfter": {
+                            "Query_Cognitive_Services_Accounts_Page": [
+                                "Succeeded"
+                            ]
+                        },
+                        "foreach": "@if(equals(body('Query_Cognitive_Services_Accounts_Page')?['data'], null), json('[]'), body('Query_Cognitive_Services_Accounts_Page')?['data'])",
+                        "actions": {
+                            "Append_account": {
+                                "type": "AppendToArrayVariable",
+                                "runAfter": {},
+                                "inputs": {
+                                    "name": "allAccounts",
+                                    "value": "@items('Merge_accounts_into_array')"
+                                }
+                            }
+                        },
+                        "runtimeConfiguration": {
+                            "concurrency": {
+                                "repetitions": 1
+                            }
+                        }
+                    },
+                    "Check_for_more_pages": {
+                        "type": "If",
+                        "runAfter": {
+                            "Merge_accounts_into_array": [
+                                "Succeeded"
+                            ]
+                        },
+                        "expression": {
+                            "and": [
+                                {
+                                    "not": {
+                                        "equals": [
+                                            "@coalesce(body('Query_Cognitive_Services_Accounts_Page')?['$skipToken'], '')",
+                                            ""
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        "actions": {
+                            "Set_skip_token": {
+                                "type": "SetVariable",
+                                "runAfter": {},
+                                "inputs": {
+                                    "name": "skipToken",
+                                    "value": "@body('Query_Cognitive_Services_Accounts_Page')?['$skipToken']"
+                                }
+                            }
+                        },
+                        "else": {
+                            "actions": {
+                                "Set_has_more_pages_false": {
+                                    "type": "SetVariable",
+                                    "runAfter": {},
+                                    "inputs": {
+                                        "name": "hasMorePages",
+                                        "value": false
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             },
             "Check_if_accounts_exist": {
                 "type": "If",
                 "runAfter": {
-                    "Query_Cognitive_Services_Accounts": [
+                    "Paginate_Cognitive_Services_Accounts": [
                         "Succeeded"
                     ]
                 },
@@ -80,7 +203,7 @@
                     "and": [
                         {
                             "greater": [
-                                "@length(body('Query_Cognitive_Services_Accounts')?['data'])",
+                                "@length(variables('allAccounts'))",
                                 0
                             ]
                         }
@@ -90,7 +213,7 @@
                     "For_each_account": {
                         "type": "Foreach",
                         "runAfter": {},
-                        "foreach": "@body('Query_Cognitive_Services_Accounts')?['data']",
+                        "foreach": "@variables('allAccounts')",
                         "actions": {
                             "Get_deployments_for_account": {
                                 "type": "Http",
@@ -236,7 +359,7 @@
                                 "message": "Successfully sent @{variables('totalDeployments')} deployments from @{variables('accountsWithDeployments')} accounts to Log Analytics",
                                 "deploymentCount": "@variables('totalDeployments')",
                                 "accountsWithDeployments": "@variables('accountsWithDeployments')",
-                                "accountsProcessed": "@length(body('Query_Cognitive_Services_Accounts')?['data'])"
+                                "accountsProcessed": "@length(variables('allAccounts'))"
                             }
                         }
                     }

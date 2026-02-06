@@ -15,7 +15,9 @@ This repository contains Azure Bicep templates for deploying infrastructure to i
 │  ┌────────────────────────────────────────────────────────────────────┐  │
 │  │ 1. Receive HTTP request (trigger only, no parameters required)     │  │
 │  │ 2. Query Azure Resource Graph for all Cognitive Services ACCOUNTS  │  │
-│  │    (scope determined by managed identity's Reader permissions)     │  │
+│  │    - Automatically paginates through all results (1000 per page)   │  │
+│  │    - Uses $skipToken to fetch subsequent pages until complete      │  │
+│  │    - Scope determined by managed identity's Reader permissions     │  │
 │  │ 3. For each account (20 in parallel):                              │  │
 │  │    a. Call ARM API to get DEPLOYMENTS                              │  │
 │  │    b. Transform deployments with account metadata                  │  │
@@ -68,6 +70,7 @@ The workflow is designed for large-scale environments with many Cognitive Servic
 
 | Feature | Description |
 |---------|-------------|
+| **Automatic Pagination** | Fetches all accounts using Azure Resource Graph pagination (supports unlimited accounts) |
 | **Parallel Processing** | Processes up to 20 accounts concurrently |
 | **Per-Account DCR Sends** | Sends deployments to Log Analytics per account (avoids 1MB payload limit) |
 | **Select Transform** | Uses efficient Select action instead of nested loops |
@@ -81,12 +84,25 @@ The workflow is designed for large-scale environments with many Cognitive Servic
 | 10 | ~30 seconds | ~5 seconds |
 | 100 | ~5 minutes | ~30 seconds |
 | 500 | ~25 minutes | ~2-3 minutes |
+| 1,000+ | N/A | ~5-10 minutes (with pagination) |
 
 ### Limitations
 
-- **Resource Graph**: Returns max 1000 accounts per query (pagination not yet implemented)
 - **HTTP Trigger Timeout**: 30 minutes max execution time
 - **ARM API Rate Limits**: ~12,000 requests/hour per subscription (retry policy handles throttling)
+- **Pagination Limit**: Up to 100 pages of 1,000 accounts each (100,000 accounts max)
+
+### Pagination Implementation
+
+Azure Resource Graph returns a maximum of 1,000 results per query. The workflow handles this using an **Until loop** that:
+
+1. Queries Resource Graph with `$top: 1000` to get the first page of accounts
+2. Checks if the response contains a `$skipToken` (continuation token)
+3. If a token exists, includes it in the next request body to fetch the next page
+4. Appends each page's accounts to a cumulative array
+5. Continues until no more `$skipToken` is returned
+
+> **Note:** The built-in Logic Apps pagination feature cannot be used for Resource Graph because it requires the `$skipToken` to be passed in the POST request body, not as a URL parameter. This manual pagination approach correctly handles the Resource Graph pagination contract.
 
 ## Components
 
