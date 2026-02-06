@@ -63,6 +63,7 @@ locals {
   storage_name      = "${var.resource_prefix}st${local.unique_suffix}"
   logic_app_name    = "${var.resource_prefix}-logicapp-${local.unique_suffix}"
   asp_name          = "${var.resource_prefix}-asp-${local.unique_suffix}"
+  uami_name         = "${var.resource_prefix}-uami-${local.unique_suffix}"
   custom_table_name = "${var.custom_table_name}_CL"
   stream_name       = "Custom-${var.custom_table_name}_CL"
 
@@ -230,6 +231,17 @@ resource "azurerm_service_plan" "main" {
 }
 
 # =============================================================================
+# User-Assigned Managed Identity for Resource Graph Queries
+# =============================================================================
+
+resource "azurerm_user_assigned_identity" "main" {
+  name                = local.uami_name
+  resource_group_name = azurerm_resource_group.main.name
+  location            = var.location
+  tags                = local.tags
+}
+
+# =============================================================================
 # Logic App (Standard)
 # =============================================================================
 
@@ -249,7 +261,8 @@ resource "azurerm_logic_app_standard" "main" {
   scm_publish_basic_authentication_enabled   = true
 
   identity {
-    type = "SystemAssigned"
+    type         = "SystemAssigned, UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.main.id]
   }
 
   site_config {
@@ -260,8 +273,12 @@ resource "azurerm_logic_app_standard" "main" {
   }
 
   app_settings = {
-    "FUNCTIONS_WORKER_RUNTIME"      = "node"
-    "WEBSITE_NODE_DEFAULT_VERSION"  = "~18"
+    "FUNCTIONS_WORKER_RUNTIME"            = "node"
+    "WEBSITE_NODE_DEFAULT_VERSION"        = "~18"
+    "USER_ASSIGNED_IDENTITY_RESOURCE_ID"  = azurerm_user_assigned_identity.main.id
+    "DCE_LOGS_INGESTION_ENDPOINT"         = azurerm_monitor_data_collection_endpoint.main.logs_ingestion_endpoint
+    "DCR_IMMUTABLE_ID"                    = azapi_resource.data_collection_rule.output.properties.immutableId
+    "DCR_STREAM_NAME"                     = local.stream_name
   }
 }
 
@@ -278,24 +295,26 @@ resource "azurerm_role_assignment" "monitoring_metrics_publisher" {
 
 # =============================================================================
 # RBAC: Reader at Subscription Level (when no management group specified)
+# This is assigned to the User-Assigned Identity for Resource Graph queries
 # =============================================================================
 
 resource "azurerm_role_assignment" "reader_subscription" {
   count                = var.management_group_id == "" ? 1 : 0
   scope                = data.azurerm_subscription.current.id
   role_definition_name = "Reader"
-  principal_id         = azurerm_logic_app_standard.main.identity[0].principal_id
+  principal_id         = azurerm_user_assigned_identity.main.principal_id
   principal_type       = "ServicePrincipal"
 }
 
 # =============================================================================
 # RBAC: Reader at Management Group Level (when management group specified)
+# This is assigned to the User-Assigned Identity for cross-subscription queries
 # =============================================================================
 
 resource "azurerm_role_assignment" "reader_management_group" {
   count                = var.management_group_id != "" ? 1 : 0
   scope                = "/providers/Microsoft.Management/managementGroups/${var.management_group_id}"
   role_definition_name = "Reader"
-  principal_id         = azurerm_logic_app_standard.main.identity[0].principal_id
+  principal_id         = azurerm_user_assigned_identity.main.principal_id
   principal_type       = "ServicePrincipal"
 }

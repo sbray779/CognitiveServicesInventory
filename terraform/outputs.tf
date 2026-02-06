@@ -57,6 +57,26 @@ output "custom_table_name" {
   value       = local.custom_table_name
 }
 
+output "user_assigned_identity_name" {
+  description = "The user-assigned managed identity name"
+  value       = azurerm_user_assigned_identity.main.name
+}
+
+output "user_assigned_identity_id" {
+  description = "The user-assigned managed identity resource ID"
+  value       = azurerm_user_assigned_identity.main.id
+}
+
+output "user_assigned_identity_client_id" {
+  description = "The user-assigned managed identity client ID"
+  value       = azurerm_user_assigned_identity.main.client_id
+}
+
+output "user_assigned_identity_principal_id" {
+  description = "The user-assigned managed identity principal ID"
+  value       = azurerm_user_assigned_identity.main.principal_id
+}
+
 # =============================================================================
 # Post-Deployment Configuration Values
 # =============================================================================
@@ -64,8 +84,9 @@ output "custom_table_name" {
 output "logic_app_settings" {
   description = "App settings to configure on the Logic App after workflow deployment"
   value = {
-    DCE_LOGS_INGESTION_ENDPOINT = azurerm_monitor_data_collection_endpoint.main.logs_ingestion_endpoint
-    DCR_IMMUTABLE_ID            = azapi_resource.data_collection_rule.output.properties.immutableId
-    DCR_STREAM_NAME             = local.stream_name
+    DCE_LOGS_INGESTION_ENDPOINT          = azurerm_monitor_data_collection_endpoint.main.logs_ingestion_endpoint
+    DCR_IMMUTABLE_ID                     = azapi_resource.data_collection_rule.output.properties.immutableId
+    DCR_STREAM_NAME                      = local.stream_name
+    USER_ASSIGNED_IDENTITY_RESOURCE_ID   = azurerm_user_assigned_identity.main.id
   }
 }

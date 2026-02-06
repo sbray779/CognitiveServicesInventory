@@ -126,6 +126,7 @@ $dceLogsIngestionEndpoint = $terraformOutput.dce_logs_ingestion_endpoint.value
 $dcrImmutableId = $terraformOutput.dcr_immutable_id.value
 $dcrStreamName = $terraformOutput.dcr_stream_name.value
 $logicAppHostname = $terraformOutput.logic_app_hostname.value
+$userAssignedIdentityResourceId = $terraformOutput.user_assigned_identity_id.value
 
 Write-Success "Terraform outputs retrieved"
 Write-Info "Resource Group: $resourceGroupName"
@@ -133,6 +134,7 @@ Write-Info "Logic App: $logicAppName"
 Write-Info "DCE Endpoint: $dceLogsIngestionEndpoint"
 Write-Info "DCR Immutable ID: $dcrImmutableId"
 Write-Info "DCR Stream: $dcrStreamName"
+Write-Info "User-Assigned Identity Resource ID: $userAssignedIdentityResourceId"
 
 # ============================================
 # Verify Azure Login
@@ -169,6 +171,7 @@ if (-not $SkipSettings) {
         $appSettings["DCE_LOGS_INGESTION_ENDPOINT"] = $dceLogsIngestionEndpoint
         $appSettings["DCR_IMMUTABLE_ID"] = $dcrImmutableId
         $appSettings["DCR_STREAM_NAME"] = $dcrStreamName
+        $appSettings["USER_ASSIGNED_IDENTITY_RESOURCE_ID"] = $userAssignedIdentityResourceId
 
         # Update the Logic App with new settings
         Set-AzWebApp -ResourceGroupName $resourceGroupName -Name $logicAppName -AppSettings $appSettings | Out-Null
@@ -177,6 +180,7 @@ if (-not $SkipSettings) {
         Write-Info "DCE_LOGS_INGESTION_ENDPOINT: $dceLogsIngestionEndpoint"
         Write-Info "DCR_IMMUTABLE_ID: $dcrImmutableId"
         Write-Info "DCR_STREAM_NAME: $dcrStreamName"
+        Write-Info "USER_ASSIGNED_IDENTITY_RESOURCE_ID: $userAssignedIdentityResourceId"
     }
     catch {
         Write-Error "Failed to configure Logic App settings: $_"

@@ -12,8 +12,9 @@ This folder contains Terraform configuration to deploy the Cognitive Services De
 | Data Collection Rule (DCR) | Schema definition and routing |
 | Storage Account | Backing storage for Logic App |
 | App Service Plan | Workflow Standard (WS1) hosting |
-| Logic App (Standard) | Workflow host with managed identity |
-| RBAC Assignments | Monitoring Metrics Publisher + Reader roles |
+| User-Assigned Managed Identity | Used for Resource Graph and ARM API queries (cross-subscription support) |
+| Logic App (Standard) | Workflow host with system + user-assigned identities |
+| RBAC Assignments | Monitoring Metrics Publisher (System Identity) + Reader (User-Assigned Identity) |
 
 ## Prerequisites
 
@@ -96,7 +97,8 @@ az functionapp config appsettings set \
   --settings \
     DCE_LOGS_INGESTION_ENDPOINT="$(terraform output -json logic_app_settings | jq -r '.DCE_LOGS_INGESTION_ENDPOINT')" \
     DCR_IMMUTABLE_ID="$(terraform output -json logic_app_settings | jq -r '.DCR_IMMUTABLE_ID')" \
-    DCR_STREAM_NAME="$(terraform output -json logic_app_settings | jq -r '.DCR_STREAM_NAME')"
+    DCR_STREAM_NAME="$(terraform output -json logic_app_settings | jq -r '.DCR_STREAM_NAME')" \
+    USER_ASSIGNED_IDENTITY_RESOURCE_ID="$(terraform output -json logic_app_settings | jq -r '.USER_ASSIGNED_IDENTITY_RESOURCE_ID')"
 
 # Deploy workflow from repository root
 cd ..
@@ -131,7 +133,11 @@ func azure functionapp publish $(terraform -chdir=terraform output -raw logic_ap
 | `storage_account_name` | Storage account name |
 | `logic_app_name` | Logic App name |
 | `logic_app_hostname` | Logic App hostname |
-| `logic_app_principal_id` | Managed identity principal ID |
+| `logic_app_principal_id` | System-assigned identity principal ID |
+| `user_assigned_identity_name` | User-assigned identity name |
+| `user_assigned_identity_id` | User-assigned identity resource ID |
+| `user_assigned_identity_client_id` | User-assigned identity client ID |
+| `user_assigned_identity_principal_id` | User-assigned identity principal ID |
 | `custom_table_name` | Custom table name with _CL suffix |
 | `logic_app_settings` | Settings to configure on Logic App |
 
@@ -143,7 +149,7 @@ To enable cross-subscription queries, set the `management_group_id` variable:
 management_group_id = "ContosoGroup"
 ```
 
-This assigns the Reader role at the management group level instead of subscription level.
+This assigns the Reader role to the User-Assigned Managed Identity at the management group level, enabling cross-subscription Resource Graph queries.
 
 ## Differences from Bicep Deployment
 
