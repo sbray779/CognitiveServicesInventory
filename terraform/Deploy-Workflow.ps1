@@ -241,19 +241,31 @@ if (-not $SkipWorkflow) {
                 "Content-Type"  = "application/json"
             }
 
-            # Create workflow directory
+            # Create workflow directory (ignore error if it already exists)
             $dirUrl = "$kuduBaseUrl/api/vfs/site/wwwroot/cognitive-services-inventory/"
-            Invoke-RestMethod -Uri $dirUrl -Method PUT -Headers $headers -ErrorAction SilentlyContinue
+            try {
+                Invoke-RestMethod -Uri $dirUrl -Method PUT -Headers $headers -ErrorAction Stop
+                Write-Info "Created workflow directory"
+            }
+            catch {
+                # Directory likely already exists - this is expected
+                Write-Info "Workflow directory already exists (or created)"
+            }
 
             # Upload workflow.json
             $workflowApiUrl = "$kuduBaseUrl/api/vfs/site/wwwroot/cognitive-services-inventory/workflow.json"
             $workflowJson = Get-Content $workflowPath -Raw
-            Invoke-RestMethod -Uri $workflowApiUrl -Method PUT -Headers $headers -Body $workflowJson
+            $fileHeaders = @{
+                "Authorization" = "Basic $base64Auth"
+                "If-Match"      = "*"
+                "Content-Type"  = "application/octet-stream"
+            }
+            Invoke-RestMethod -Uri $workflowApiUrl -Method PUT -Headers $fileHeaders -Body $workflowJson
 
             # Upload host.json
             $hostApiUrl = "$kuduBaseUrl/api/vfs/site/wwwroot/host.json"
             $hostJson = Get-Content $hostJsonPath -Raw
-            Invoke-RestMethod -Uri $hostApiUrl -Method PUT -Headers $headers -Body $hostJson
+            Invoke-RestMethod -Uri $hostApiUrl -Method PUT -Headers $fileHeaders -Body $hostJson
 
             Write-Success "Workflow deployed successfully via Kudu VFS API"
         }
