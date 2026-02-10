@@ -225,22 +225,17 @@ if (-not $SkipWorkflow) {
         Write-Info "Attempting Kudu VFS API deployment method..."
 
         try {
-            # Alternative: Use VFS API with publishing credentials
-            $publishingCredentials = Invoke-AzResourceAction `
-                -ResourceGroupName $resourceGroupName `
-                -ResourceType "Microsoft.Web/sites/config" `
-                -ResourceName "$logicAppName/publishingcredentials" `
-                -Action list `
-                -ApiVersion "2024-04-01" `
-                -Force
+            # Use Azure AD bearer token for Kudu VFS API (works even when basic auth is disabled)
+            $accessToken = (Get-AzAccessToken -ResourceUrl "https://$logicAppName.scm.azurewebsites.net" -ErrorAction SilentlyContinue).Token
+            if (-not $accessToken) {
+                # Fallback to generic Azure resource token
+                $accessToken = (Get-AzAccessToken).Token
+            }
 
-            $kuduUsername = $publishingCredentials.properties.publishingUserName
-            $kuduPassword = $publishingCredentials.properties.publishingPassword
             $kuduBaseUrl = "https://$logicAppName.scm.azurewebsites.net"
 
-            $base64Auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${kuduUsername}:${kuduPassword}"))
             $headers = @{
-                "Authorization" = "Basic $base64Auth"
+                "Authorization" = "Bearer $accessToken"
                 "If-Match"      = "*"
                 "Content-Type"  = "application/json"
             }
@@ -260,7 +255,7 @@ if (-not $SkipWorkflow) {
             $workflowApiUrl = "$kuduBaseUrl/api/vfs/site/wwwroot/cognitive-services-inventory/workflow.json"
             $workflowJson = Get-Content $workflowPath -Raw
             $fileHeaders = @{
-                "Authorization" = "Basic $base64Auth"
+                "Authorization" = "Bearer $accessToken"
                 "If-Match"      = "*"
                 "Content-Type"  = "application/octet-stream"
             }

@@ -16,6 +16,24 @@ param appServicePlanId string
 @description('Optional. Enable system-assigned managed identity.')
 param enableManagedIdentity bool = true
 
+@description('Optional. Resource ID of the user-assigned managed identity for Azure Resource Graph queries.')
+param userAssignedIdentityId string = ''
+
+@description('Optional. Resource ID of the user-assigned managed identity for workflow authentication (same as userAssignedIdentityId).')
+param userAssignedIdentityResourceId string = ''
+
+@description('Optional. Data Collection Endpoint logs ingestion endpoint URL.')
+param dceLogsIngestionEndpoint string = ''
+
+@description('Optional. Data Collection Rule immutable ID.')
+param dcrImmutableId string = ''
+
+@description('Optional. Data Collection Rule stream name.')
+param dcrStreamName string = ''
+
+@description('Optional. Management group ID for scoping Resource Graph queries.')
+param managementGroupId string = ''
+
 // ============ //
 // Resources    //
 // ============ //
@@ -24,13 +42,20 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2024-01-01' existing 
   name: storageAccountName
 }
 
+// Determine identity type based on what's enabled
+var hasUserAssignedIdentity = !empty(userAssignedIdentityId)
+var identityType = enableManagedIdentity && hasUserAssignedIdentity ? 'SystemAssigned, UserAssigned' : (enableManagedIdentity ? 'SystemAssigned' : (hasUserAssignedIdentity ? 'UserAssigned' : 'None'))
+
 resource logicApp 'Microsoft.Web/sites@2024-04-01' = {
   name: name
   location: location
   tags: tags
   kind: 'functionapp,workflowapp'
   identity: {
-    type: enableManagedIdentity ? 'SystemAssigned' : 'None'
+    type: identityType
+    userAssignedIdentities: hasUserAssignedIdentity ? {
+      '${userAssignedIdentityId}': {}
+    } : null
   }
   properties: {
     serverFarmId: appServicePlanId
@@ -73,6 +98,27 @@ resource logicApp 'Microsoft.Web/sites@2024-04-01' = {
         {
           name: 'APP_KIND'
           value: 'workflowApp'
+        }
+        // User-assigned managed identity resource ID for workflow authentication
+        {
+          name: 'USER_ASSIGNED_IDENTITY_RESOURCE_ID'
+          value: userAssignedIdentityResourceId
+        }
+        {
+          name: 'DCE_LOGS_INGESTION_ENDPOINT'
+          value: dceLogsIngestionEndpoint
+        }
+        {
+          name: 'DCR_IMMUTABLE_ID'
+          value: dcrImmutableId
+        }
+        {
+          name: 'DCR_STREAM_NAME'
+          value: dcrStreamName
+        }
+        {
+          name: 'MANAGEMENT_GROUP_ID'
+          value: managementGroupId
         }
       ]
       use32BitWorkerProcess: false

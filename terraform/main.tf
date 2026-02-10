@@ -279,6 +279,7 @@ resource "azurerm_logic_app_standard" "main" {
     "DCE_LOGS_INGESTION_ENDPOINT"         = azurerm_monitor_data_collection_endpoint.main.logs_ingestion_endpoint
     "DCR_IMMUTABLE_ID"                    = azapi_resource.data_collection_rule.output.properties.immutableId
     "DCR_STREAM_NAME"                     = local.stream_name
+    "MANAGEMENT_GROUP_ID"                 = var.management_group_id
   }
 }
 
@@ -291,6 +292,10 @@ resource "azurerm_role_assignment" "monitoring_metrics_publisher" {
   role_definition_name = "Monitoring Metrics Publisher"
   principal_id         = azurerm_logic_app_standard.main.identity[0].principal_id
   principal_type       = "ServicePrincipal"
+
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 # =============================================================================
@@ -304,6 +309,10 @@ resource "azurerm_role_assignment" "reader_subscription" {
   role_definition_name = "Reader"
   principal_id         = azurerm_user_assigned_identity.main.principal_id
   principal_type       = "ServicePrincipal"
+
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 # =============================================================================
@@ -317,4 +326,8 @@ resource "azurerm_role_assignment" "reader_management_group" {
   role_definition_name = "Reader"
   principal_id         = azurerm_user_assigned_identity.main.principal_id
   principal_type       = "ServicePrincipal"
+
+  lifecycle {
+    ignore_changes = [name]
+  }
 }

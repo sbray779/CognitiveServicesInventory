@@ -90,10 +90,27 @@
                     ]
                 }
             },
+            "Initialize_failed_accounts": {
+                "type": "InitializeVariable",
+                "runAfter": {
+                    "Initialize_has_more_pages": [
+                        "Succeeded"
+                    ]
+                },
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "failedAccounts",
+                            "type": "array",
+                            "value": []
+                        }
+                    ]
+                }
+            },
             "Paginate_Cognitive_Services_Accounts": {
                 "type": "Until",
                 "runAfter": {
-                    "Initialize_has_more_pages": [
+                    "Initialize_failed_accounts": [
                         "Succeeded"
                     ]
                 },
@@ -112,10 +129,11 @@
                             "headers": {
                                 "Content-Type": "application/json"
                             },
-                            "body": "@if(equals(variables('skipToken'), ''), json('{\"query\": \"Resources | where type =~ \\u0027microsoft.cognitiveservices/accounts\\u0027 | join kind=leftouter (ResourceContainers | where type =~ \\u0027microsoft.resources/subscriptions\\u0027 | project subscriptionId, SubscriptionName = name) on subscriptionId | project AccountId = id, AccountName = name, AccountKind = kind, AccountEndpoint = properties.endpoint, SubscriptionId = subscriptionId, SubscriptionName, ResourceGroup = resourceGroup, Location = location\", \"options\": {\"$top\": 1000}}'), json(concat('{\"query\": \"Resources | where type =~ \\u0027microsoft.cognitiveservices/accounts\\u0027 | join kind=leftouter (ResourceContainers | where type =~ \\u0027microsoft.resources/subscriptions\\u0027 | project subscriptionId, SubscriptionName = name) on subscriptionId | project AccountId = id, AccountName = name, AccountKind = kind, AccountEndpoint = properties.endpoint, SubscriptionId = subscriptionId, SubscriptionName, ResourceGroup = resourceGroup, Location = location\", \"options\": {\"$top\": 1000, \"$skipToken\": \"', variables('skipToken'), '\"}}')))",
+                            "body": "@if(equals(variables('skipToken'), ''), json(concat('{\"query\": \"Resources | where type =~ \\u0027microsoft.cognitiveservices/accounts\\u0027 | where kind in~ (\\u0027OpenAI\\u0027, \\u0027AIServices\\u0027, \\u0027CognitiveServices\\u0027) | join kind=leftouter (ResourceContainers | where type =~ \\u0027microsoft.resources/subscriptions\\u0027 | project subscriptionId, SubscriptionName = name) on subscriptionId | project AccountId = id, AccountName = name, AccountKind = kind, AccountEndpoint = properties.endpoint, SubscriptionId = subscriptionId, SubscriptionName, ResourceGroup = resourceGroup, Location = location\", \"managementGroups\": [\"', appsetting('MANAGEMENT_GROUP_ID'), '\"], \"options\": {\"$top\": 1000}}')), json(concat('{\"query\": \"Resources | where type =~ \\u0027microsoft.cognitiveservices/accounts\\u0027 | where kind in~ (\\u0027OpenAI\\u0027, \\u0027AIServices\\u0027, \\u0027CognitiveServices\\u0027) | join kind=leftouter (ResourceContainers | where type =~ \\u0027microsoft.resources/subscriptions\\u0027 | project subscriptionId, SubscriptionName = name) on subscriptionId | project AccountId = id, AccountName = name, AccountKind = kind, AccountEndpoint = properties.endpoint, SubscriptionId = subscriptionId, SubscriptionName, ResourceGroup = resourceGroup, Location = location\", \"managementGroups\": [\"', appsetting('MANAGEMENT_GROUP_ID'), '\"], \"options\": {\"$top\": 1000, \"$skipToken\": \"', variables('skipToken'), '\"}}')))",
                             "authentication": {
                                 "type": "ManagedServiceIdentity",
-                                "audience": "https://management.azure.com/"
+                                "audience": "https://management.azure.com/",
+                                "identity": "@appsetting('USER_ASSIGNED_IDENTITY_RESOURCE_ID')"
                             }
                         },
                         "runtimeConfiguration": {
@@ -223,7 +241,8 @@
                                     "method": "GET",
                                     "authentication": {
                                         "type": "ManagedServiceIdentity",
-                                        "audience": "https://management.azure.com/"
+                                        "audience": "https://management.azure.com/",
+                                        "identity": "@appsetting('USER_ASSIGNED_IDENTITY_RESOURCE_ID')"
                                     }
                                 },
                                 "runtimeConfiguration": {
@@ -237,6 +256,26 @@
                                     "interval": "PT10S",
                                     "minimumInterval": "PT5S",
                                     "maximumInterval": "PT1M"
+                                }
+                            },
+                            "Log_failed_account": {
+                                "type": "AppendToArrayVariable",
+                                "runAfter": {
+                                    "Get_deployments_for_account": [
+                                        "Failed",
+                                        "TimedOut"
+                                    ]
+                                },
+                                "inputs": {
+                                    "name": "failedAccounts",
+                                    "value": {
+                                        "AccountName": "@{items('For_each_account')?['AccountName']}",
+                                        "AccountId": "@{items('For_each_account')?['AccountId']}",
+                                        "AccountKind": "@{items('For_each_account')?['AccountKind']}",
+                                        "SubscriptionId": "@{items('For_each_account')?['SubscriptionId']}",
+                                        "Error": "@{coalesce(body('Get_deployments_for_account')?['error']?['message'], actions('Get_deployments_for_account')?['error']?['message'], 'Unknown error')}",
+                                        "StatusCode": "@{outputs('Get_deployments_for_account')?['statusCode']}"
+                                    }
                                 }
                             },
                             "Check_if_deployments_exist": {
@@ -349,17 +388,20 @@
                         "type": "Response",
                         "runAfter": {
                             "For_each_account": [
-                                "Succeeded"
+                                "Succeeded",
+                                "Failed"
                             ]
                         },
                         "inputs": {
-                            "statusCode": 200,
+                            "statusCode": "@if(greater(length(variables('failedAccounts')), 0), 207, 200)",
                             "body": {
-                                "status": "Success",
-                                "message": "Successfully sent @{variables('totalDeployments')} deployments from @{variables('accountsWithDeployments')} accounts to Log Analytics",
+                                "status": "@if(greater(length(variables('failedAccounts')), 0), 'PartialSuccess', 'Success')",
+                                "message": "@if(greater(length(variables('failedAccounts')), 0), concat('Sent ', string(variables('totalDeployments')), ' deployments from ', string(variables('accountsWithDeployments')), ' accounts to Log Analytics. Failed to query ', string(length(variables('failedAccounts'))), ' account(s).'), concat('Successfully sent ', string(variables('totalDeployments')), ' deployments from ', string(variables('accountsWithDeployments')), ' accounts to Log Analytics'))",
                                 "deploymentCount": "@variables('totalDeployments')",
                                 "accountsWithDeployments": "@variables('accountsWithDeployments')",
-                                "accountsProcessed": "@length(variables('allAccounts'))"
+                                "accountsProcessed": "@length(variables('allAccounts'))",
+                                "failedAccountCount": "@length(variables('failedAccounts'))",
+                                "failedAccounts": "@variables('failedAccounts')"
                             }
                         }
                     }

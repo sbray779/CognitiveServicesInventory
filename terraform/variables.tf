@@ -47,7 +47,7 @@ variable "tags" {
 variable "management_group_id" {
   description = "Management group ID for cross-subscription Resource Graph queries. Leave empty for subscription-level scope."
   type        = string
-  default     = ""
+  default     = "ContosoGroup"
 }
 
 variable "retention_in_days" {

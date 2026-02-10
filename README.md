@@ -17,14 +17,14 @@ This repository contains Azure Bicep templates for deploying infrastructure to i
 │  │ 2. Query Azure Resource Graph for all Cognitive Services ACCOUNTS  │  │
 │  │    - Automatically paginates through all results (1000 per page)   │  │
 │  │    - Uses $skipToken to fetch subsequent pages until complete      │  │
-│  │    - Scope determined by managed identity's Reader permissions     │  │
+│  │    - Uses User-Assigned Managed Identity for cross-subscription    │  │
 │  │ 3. For each account (20 in parallel):                              │  │
-│  │    a. Call ARM API to get DEPLOYMENTS                              │  │
+│  │    a. Call ARM API to get DEPLOYMENTS (User-Assigned Identity)     │  │
 │  │    b. Transform deployments with account metadata                  │  │
-│  │    c. Send to DCR immediately (per-account batching)               │  │
+│  │    c. Send to DCR immediately (System-Assigned Identity)           │  │
 │  │ 4. Return summary response                                         │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
-│                          (System Managed Identity)                        │
+│           (System + User-Assigned Managed Identities)                     │
 └─────────────────────────────────┬────────────────────────────────────────┘
                                   │
                             (multiple parallel sends)
@@ -114,8 +114,9 @@ Azure Resource Graph returns a maximum of 1,000 results per query. The workflow 
 | **Storage Account** | Required backing storage for Standard Logic App |
 | **App Service Plan** | Workflow Standard SKU for Logic App hosting |
 | **Standard Logic App** | Hosts the workflow with managed identity |
+| **User-Assigned Managed Identity** | Used for Azure Resource Graph and ARM API queries (cross-subscription support) |
 | **Logic App Workflow** | HTTP-triggered workflow that queries accounts via Resource Graph, then queries deployments via ARM API |
-| **RBAC Assignments** | Monitoring Metrics Publisher + Reader roles |
+| **RBAC Assignments** | Monitoring Metrics Publisher (System Identity) + Reader (User-Assigned Identity) roles |
 
 ## Prerequisites
 
@@ -225,6 +226,7 @@ After deployment, you need to configure the Logic App with the DCR/DCE settings:
 | `DCE_LOGS_INGESTION_ENDPOINT` | From output: `dceLogsIngestionEndpoint` |
 | `DCR_IMMUTABLE_ID` | From output: `dcrImmutableId` |
 | `DCR_STREAM_NAME` | From output: `dcrStreamName` |
+| `USER_ASSIGNED_IDENTITY_RESOURCE_ID` | From output: `userAssignedIdentityResourceId` |
 
 4. Deploy the workflow using Azure Functions Core Tools:
    ```bash
@@ -240,8 +242,8 @@ After deployment, you need to configure the Logic App with the DCR/DCE settings:
 For cross-subscription queries, deploy the management group RBAC:
 
 ```bash
-# Update main-management-group-rbac.bicepparam with the Logic App principal ID
-# (from the main deployment output: logicAppPrincipalId)
+# Update main-management-group-rbac.bicepparam with the identity principal IDs
+# (from the main deployment outputs: logicAppPrincipalId and userAssignedIdentityPrincipalId)
 
 az deployment mg create \
   --management-group-id "<your-management-group-id>" \
@@ -249,6 +251,8 @@ az deployment mg create \
   --template-file main-management-group-rbac.bicep \
   --parameters main-management-group-rbac.bicepparam
 ```
+
+> **Note:** The workflow uses a **User-Assigned Managed Identity** for Resource Graph and ARM API queries. This identity needs Reader access at the management group level to query resources across all subscriptions.
 
 ---
 

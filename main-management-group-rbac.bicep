@@ -4,18 +4,18 @@ targetScope = 'managementGroup'
 // Parameters   //
 // ============ //
 
-@description('Required. The principal ID of the Logic App managed identity.')
-param logicAppPrincipalId string
+@description('Required. The principal ID of the user-assigned managed identity (for Resource Graph queries).')
+param userAssignedIdentityPrincipalId string
 
 // ============ //
 // Resources    //
 // ============ //
 
-// Reader role assignment at management group level for cross-subscription queries
-module mgRbac 'modules/rbac-management-group.bicep' = {
-  name: 'deploy-mg-rbac'
+// Reader role assignment at management group level for cross-subscription queries (user-assigned identity)
+module mgRbacUserAssigned 'modules/rbac-management-group.bicep' = {
+  name: 'deploy-mg-rbac-uami'
   params: {
-    principalId: logicAppPrincipalId
+    principalId: userAssignedIdentityPrincipalId
     principalType: 'ServicePrincipal'
   }
 }
@@ -24,5 +24,5 @@ module mgRbac 'modules/rbac-management-group.bicep' = {
 // Outputs      //
 // ============ //
 
-@description('The Reader role assignment ID at management group level.')
-output readerRoleAssignmentId string = mgRbac.outputs.readerRoleAssignmentId
+@description('The Reader role assignment ID at management group level for user-assigned identity.')
+output readerRoleAssignmentId string = mgRbacUserAssigned.outputs.readerRoleAssignmentId

@@ -233,6 +233,8 @@ $dcrImmutableId = $deploymentOutputs.dcrImmutableId.Value
 $dcrStreamName = $deploymentOutputs.dcrStreamName.Value
 $logicAppHostName = $deploymentOutputs.logicAppHostName.Value
 $logicAppPrincipalId = $deploymentOutputs.logicAppPrincipalId.Value
+$userAssignedIdentityResourceId = $deploymentOutputs.userAssignedIdentityResourceId.Value
+$userAssignedIdentityPrincipalId = $deploymentOutputs.userAssignedIdentityPrincipalId.Value
 
 # ============================================
 # STEP 2: Configure Logic App Settings
@@ -254,6 +256,7 @@ if (-not $SkipWorkflow) {
         $appSettings["DCE_LOGS_INGESTION_ENDPOINT"] = $dceLogsIngestionEndpoint
         $appSettings["DCR_IMMUTABLE_ID"] = $dcrImmutableId
         $appSettings["DCR_STREAM_NAME"] = $dcrStreamName
+        $appSettings["USER_ASSIGNED_IDENTITY_RESOURCE_ID"] = $userAssignedIdentityResourceId
 
         # Update the Logic App with new settings
         Set-AzWebApp -ResourceGroupName $ResourceGroupName -Name $logicAppName -AppSettings $appSettings | Out-Null
@@ -262,6 +265,7 @@ if (-not $SkipWorkflow) {
         Write-Info "DCE_LOGS_INGESTION_ENDPOINT: $dceLogsIngestionEndpoint"
         Write-Info "DCR_IMMUTABLE_ID: $dcrImmutableId"
         Write-Info "DCR_STREAM_NAME: $dcrStreamName"
+        Write-Info "USER_ASSIGNED_IDENTITY_RESOURCE_ID: $userAssignedIdentityResourceId"
     }
     catch {
         Write-Error "Failed to configure Logic App settings: $_"
@@ -374,10 +378,13 @@ if ($ManagementGroupId -and -not $SkipInfrastructure) {
             -Location $Location `
             -Name $mgDeploymentName `
             -TemplateFile "$scriptPath\main-management-group-rbac.bicep" `
-            -TemplateParameterObject @{ logicAppPrincipalId = $logicAppPrincipalId }
+            -TemplateParameterObject @{ 
+                userAssignedIdentityPrincipalId = $userAssignedIdentityPrincipalId
+            }
 
         if ($mgDeployment.ProvisioningState -eq "Succeeded") {
             Write-Success "Management Group RBAC deployed successfully"
+            Write-Info "User-Assigned Identity has Reader access at management group level"
         }
         else {
             Write-Warn "Management Group RBAC deployment state: $($mgDeployment.ProvisioningState)"

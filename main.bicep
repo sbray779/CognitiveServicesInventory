@@ -38,6 +38,7 @@ var dcrNameVar = '${resourcePrefix}-dcr-${uniqueSuffix}'
 var storageNameVar = '${resourcePrefix}st${uniqueSuffix}'
 var logicAppNameVar = '${resourcePrefix}-logicapp-${uniqueSuffix}'
 var appServicePlanNameVar = '${resourcePrefix}-asp-${uniqueSuffix}'
+var userAssignedIdentityNameVar = '${resourcePrefix}-uami-${uniqueSuffix}'
 
 // Get the Log Analytics workspace resource ID (construct manually since we're at subscription scope)
 var logAnalyticsWorkspaceResourceId = '/subscriptions/${subscription().subscriptionId}/resourceGroups/${logAnalyticsWorkspaceResourceGroupName}/providers/Microsoft.OperationalInsights/workspaces/${logAnalyticsWorkspaceName}'
@@ -119,6 +120,17 @@ module appServicePlan 'modules/app-service-plan.bicep' = {
   }
 }
 
+// User-Assigned Managed Identity for Azure Resource Graph queries
+module userAssignedIdentity 'modules/user-assigned-identity.bicep' = {
+  name: 'deploy-uami'
+  scope: rg
+  params: {
+    name: userAssignedIdentityNameVar
+    location: location
+    tags: tags
+  }
+}
+
 // Logic App (Standard)
 module logicApp 'modules/logic-app.bicep' = {
   name: 'deploy-logicapp'
@@ -130,15 +142,33 @@ module logicApp 'modules/logic-app.bicep' = {
     storageAccountName: storageAccount.outputs.name
     appServicePlanId: appServicePlan.outputs.resourceId
     enableManagedIdentity: true
+    userAssignedIdentityId: userAssignedIdentity.outputs.resourceId
+    userAssignedIdentityResourceId: userAssignedIdentity.outputs.resourceId
+    dceLogsIngestionEndpoint: dce.outputs.logsIngestionEndpoint
+    dcrImmutableId: dcr.outputs.immutableId
+    dcrStreamName: dcr.outputs.streamName
+    managementGroupId: managementGroupId
   }
 }
 
-// RBAC Assignments for the Logic App
+// RBAC Assignments for the Logic App (system-assigned identity for DCR access)
 module rbacAssignments 'modules/rbac-assignments.bicep' = {
   name: 'deploy-rbac'
   scope: rg
   params: {
     principalId: logicApp.outputs.principalId
+    principalType: 'ServicePrincipal'
+    dataCollectionRuleId: dcr.outputs.resourceId
+    managementGroupId: managementGroupId
+  }
+}
+
+// RBAC Assignments for the User-Assigned Managed Identity (Reader for Resource Graph queries)
+module rbacUserAssignedIdentity 'modules/rbac-assignments.bicep' = {
+  name: 'deploy-rbac-uami'
+  scope: rg
+  params: {
+    principalId: userAssignedIdentity.outputs.principalId
     principalType: 'ServicePrincipal'
     dataCollectionRuleId: dcr.outputs.resourceId
     managementGroupId: managementGroupId
@@ -181,3 +211,15 @@ output logicAppPrincipalId string = logicApp.outputs.principalId
 
 @description('The custom table name in Log Analytics.')
 output customTableName string = customTable.outputs.name
+
+@description('The user-assigned managed identity name.')
+output userAssignedIdentityName string = userAssignedIdentity.outputs.name
+
+@description('The user-assigned managed identity resource ID.')
+output userAssignedIdentityResourceId string = userAssignedIdentity.outputs.resourceId
+
+@description('The user-assigned managed identity client ID.')
+output userAssignedIdentityClientId string = userAssignedIdentity.outputs.clientId
+
+@description('The user-assigned managed identity principal ID.')
+output userAssignedIdentityPrincipalId string = userAssignedIdentity.outputs.principalId
