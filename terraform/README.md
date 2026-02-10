@@ -115,7 +115,7 @@ func azure functionapp publish $(terraform -chdir=terraform output -raw logic_ap
 | `location` | Yes | - | Azure region |
 | `custom_table_name` | No | `CognitiveServicesInventory` | Table name (without _CL suffix) |
 | `resource_prefix` | No | `cogai` | Prefix for resource names |
-| `management_group_id` | No | `""` | Management group for cross-subscription queries |
+| `management_group_id` | No | `""` | Management group for cross-subscription queries. Also set as `MANAGEMENT_GROUP_ID` app setting to scope the Resource Graph query. |
 | `retention_in_days` | No | `30` | Table retention (4-730 days) |
 | `total_retention_in_days` | No | `365` | Total retention including archive (4-2556 days) |
 | `tags` | No | `{}` | Additional tags for resources |
@@ -149,7 +149,21 @@ To enable cross-subscription queries, set the `management_group_id` variable:
 management_group_id = "ContosoGroup"
 ```
 
-This assigns the Reader role to the User-Assigned Managed Identity at the management group level, enabling cross-subscription Resource Graph queries.
+This does two things:
+1. Assigns the **Reader** role to the User-Assigned Managed Identity at the management group level, enabling cross-subscription Resource Graph queries
+2. Sets the **`MANAGEMENT_GROUP_ID`** app setting on the Logic App, which scopes the Resource Graph query to only return accounts from subscriptions under that management group
+
+### Workflow Error Handling
+
+The workflow includes error handling for individual account queries. If the deployments API call fails for any account (e.g., 403 Forbidden, timeout), the workflow:
+- Logs the failed account's name, ID, kind, subscription, error message, and HTTP status code
+- Continues processing remaining accounts
+- Returns a `207 Multi-Status` response with a `failedAccounts` array listing all failures
+- Returns `200 OK` with status `Success` if all accounts were queried successfully
+
+### Account Kind Filtering
+
+The Resource Graph query only returns accounts with kinds that support the `/deployments` API: `OpenAI`, `AIServices`, and `CognitiveServices`. Other Cognitive Services account types (Speech, Vision, etc.) are excluded to avoid unnecessary API calls.
 
 ## Differences from Bicep Deployment
 

@@ -15,6 +15,8 @@ This repository contains Azure Bicep templates for deploying infrastructure to i
 │  ┌────────────────────────────────────────────────────────────────────┐  │
 │  │ 1. Receive HTTP request (trigger only, no parameters required)     │  │
 │  │ 2. Query Azure Resource Graph for all Cognitive Services ACCOUNTS  │  │
+│  │    - Filters to kinds: OpenAI, AIServices, CognitiveServices       │  │
+│  │    - Scopes to management group via MANAGEMENT_GROUP_ID setting    │  │
 │  │    - Automatically paginates through all results (1000 per page)   │  │
 │  │    - Uses $skipToken to fetch subsequent pages until complete      │  │
 │  │    - Uses User-Assigned Managed Identity for cross-subscription    │  │
@@ -22,7 +24,8 @@ This repository contains Azure Bicep templates for deploying infrastructure to i
 │  │    a. Call ARM API to get DEPLOYMENTS (User-Assigned Identity)     │  │
 │  │    b. Transform deployments with account metadata                  │  │
 │  │    c. Send to DCR immediately (System-Assigned Identity)           │  │
-│  │ 4. Return summary response                                         │  │
+│  │    d. On failure: log account details to failedAccounts array      │  │
+│  │ 4. Return summary response (includes any failed accounts)          │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 │           (System + User-Assigned Managed Identities)                     │
 └─────────────────────────────────┬────────────────────────────────────────┘
@@ -59,10 +62,26 @@ This repository contains Azure Bicep templates for deploying infrastructure to i
 
 The workflow uses a **two-step query approach** because Cognitive Services deployments are not indexed in Azure Resource Graph:
 
-1. **Step 1 - Query Accounts**: Use Azure Resource Graph to find all Cognitive Services accounts
+1. **Step 1 - Query Accounts**: Use Azure Resource Graph to find all Cognitive Services accounts scoped to a management group, filtered to account kinds that support deployments (`OpenAI`, `AIServices`, `CognitiveServices`)
 2. **Step 2 - Query Deployments**: For each account, call the ARM API to retrieve deployments
 
 This approach ensures complete visibility into all model deployments across your Azure environment.
+
+### Account Kind Filtering
+
+The Resource Graph query only returns accounts with `kind` values that support the `/deployments` API:
+
+| Kind | Description |
+|------|-------------|
+| `OpenAI` | Azure OpenAI Service resources |
+| `AIServices` | Azure AI Foundry / AI Services (multi-service) resources |
+| `CognitiveServices` | Legacy multi-service Cognitive Services resources |
+
+Account kinds like `Speech`, `ComputerVision`, `ContentModerator`, `FormRecognizer`, etc. are excluded because they do not support model deployments.
+
+### Management Group Scoping
+
+The Resource Graph query is scoped to a specific management group via the `MANAGEMENT_GROUP_ID` app setting. This ensures the query only returns accounts from subscriptions under that management group, rather than all subscriptions the identity has access to.
 
 ## Scalability Features
 
@@ -76,6 +95,7 @@ The workflow is designed for large-scale environments with many Cognitive Servic
 | **Select Transform** | Uses efficient Select action instead of nested loops |
 | **Exponential Retry** | Automatically retries on ARM API throttling (429 errors) |
 | **Chunked Transfer** | Uses chunked transfer mode for large responses |
+| **Error Handling** | Logs failed account queries with account name, ID, and error details; returns partial success response |
 
 ### Performance Characteristics
 
@@ -227,6 +247,7 @@ After deployment, you need to configure the Logic App with the DCR/DCE settings:
 | `DCR_IMMUTABLE_ID` | From output: `dcrImmutableId` |
 | `DCR_STREAM_NAME` | From output: `dcrStreamName` |
 | `USER_ASSIGNED_IDENTITY_RESOURCE_ID` | From output: `userAssignedIdentityResourceId` |
+| `MANAGEMENT_GROUP_ID` | Management group ID for scoping Resource Graph queries |
 
 4. Deploy the workflow using Azure Functions Core Tools:
    ```bash
@@ -491,13 +512,17 @@ CustomLATable/
 
 1. Verify the Logic App managed identity has `Reader` role at the appropriate scope
 2. For cross-subscription queries, ensure the management group RBAC is deployed
-3. Test the Resource Graph query directly in Azure Portal
+3. Verify the `MANAGEMENT_GROUP_ID` app setting is set correctly on the Logic App
+4. Test the Resource Graph query directly in Azure Portal
+5. Note: Only accounts with kind `OpenAI`, `AIServices`, or `CognitiveServices` are queried
 
 ### Deployments not being retrieved
 
 1. Verify the Logic App managed identity has `Reader` role on the Cognitive Services accounts
-2. Check workflow run history for 403 (Forbidden) errors on ARM API calls
-3. Ensure accounts are not filtered out by network restrictions (Private Endpoint only)
+2. Check the workflow response body for `failedAccounts` — it lists any accounts that returned errors
+3. A `207` (Multi-Status) response indicates some accounts failed while others succeeded
+4. Check workflow run history for 403 (Forbidden) errors on ARM API calls
+5. Ensure accounts are not filtered out by network restrictions (Private Endpoint only)
 
 ### Custom table not created
 
