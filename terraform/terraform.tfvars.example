@@ -24,7 +24,7 @@ location = "eastus"
 
 # Optional: Data retention settings
 # retention_in_days       = 30
-# total_retention_in_days = 365
+# total_retention_in_days = 30
 
 # Optional: Additional tags
 # tags = {

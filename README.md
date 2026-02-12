@@ -89,8 +89,9 @@ The workflow is designed for large-scale environments with many Cognitive Servic
 
 | Feature | Description |
 |---------|-------------|
-| **Automatic Pagination** | Fetches all accounts using Azure Resource Graph pagination (supports unlimited accounts) |
-| **Parallel Processing** | Processes up to 20 accounts concurrently |
+| **Automatic Account Pagination** | Fetches all accounts using Azure Resource Graph pagination (supports unlimited accounts) |
+| **Automatic Deployment Pagination** | Paginates through all deployments per account using ARM API `nextLink` (no deployment limit) |
+| **Sequential Processing** | Processes accounts sequentially for safe variable reuse during deployment pagination |
 | **Per-Account DCR Sends** | Sends deployments to Log Analytics per account (avoids 1MB payload limit) |
 | **Select Transform** | Uses efficient Select action instead of nested loops |
 | **Exponential Retry** | Automatically retries on ARM API throttling (429 errors) |
@@ -99,20 +100,25 @@ The workflow is designed for large-scale environments with many Cognitive Servic
 
 ### Performance Characteristics
 
-| Accounts | Sequential (old) | Parallel (current) |
-|----------|------------------|-------------------|
-| 10 | ~30 seconds | ~5 seconds |
-| 100 | ~5 minutes | ~30 seconds |
-| 500 | ~25 minutes | ~2-3 minutes |
-| 1,000+ | N/A | ~5-10 minutes (with pagination) |
+| Accounts | Estimated Time |
+|----------|---------------|
+| 10 | ~30 seconds |
+| 100 | ~5 minutes |
+| 500 | ~25 minutes |
+| 1,000+ | ~50+ minutes (with account pagination) |
+
+> **Note:** Accounts are processed sequentially (concurrency: 1) to support safe deployment pagination using shared variables. This ensures all deployments are captured even for accounts with many deployments.
 
 ### Limitations
 
 - **HTTP Trigger Timeout**: 30 minutes max execution time
 - **ARM API Rate Limits**: ~12,000 requests/hour per subscription (retry policy handles throttling)
-- **Pagination Limit**: Up to 100 pages of 1,000 accounts each (100,000 accounts max)
+- **Account Pagination Limit**: Up to 100 pages of 1,000 accounts each (100,000 accounts max)
+- **Deployment Pagination Limit**: Up to 50 pages per account (follows ARM API `nextLink`)
 
 ### Pagination Implementation
+
+#### Account Pagination (Azure Resource Graph)
 
 Azure Resource Graph returns a maximum of 1,000 results per query. The workflow handles this using an **Until loop** that:
 
@@ -123,6 +129,19 @@ Azure Resource Graph returns a maximum of 1,000 results per query. The workflow 
 5. Continues until no more `$skipToken` is returned
 
 > **Note:** The built-in Logic Apps pagination feature cannot be used for Resource Graph because it requires the `$skipToken` to be passed in the POST request body, not as a URL parameter. This manual pagination approach correctly handles the Resource Graph pagination contract.
+
+#### Deployment Pagination (ARM API)
+
+The ARM API for listing Cognitive Services deployments can also return paginated results via a `nextLink` property. For each account, the workflow uses a **nested Until loop** that:
+
+1. Calls the ARM deployments API for the account
+2. Appends all deployments from the response `value` array to a cumulative variable
+3. Checks if the response contains a `nextLink` URL
+4. If a `nextLink` exists, follows it to fetch the next page of deployments
+5. Continues until no more `nextLink` is returned
+6. After all pages are collected, transforms and sends all deployments to the DCR
+
+This ensures accounts with many deployments (e.g., accounts with raised deployment limits) have all deployments captured.
 
 ## Components
 
